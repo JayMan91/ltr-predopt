@@ -8,6 +8,7 @@ This repository contains pointwise, pairwise and listwise ranking loss functions
 
 ### Requirements 
 Recommended python version: 3.6.10+, 3.7.6+ and 3.8.1+
+
 Contents of requirements.txt
 
 ```
