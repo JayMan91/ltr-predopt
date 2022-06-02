@@ -1,0 +1,11 @@
+pandas==1.2.3
+ortools==9.1.9490
+numpy==1.21.5
+pytorch_lightning==1.4.9
+networkx==2.3
+gurobipy==9.5.0
+tqdm==4.62.3
+torch==1.10.0
+torchmetrics==0.5.1
+tensorboard==2.8.0
+scikit_learn==1.1.1
