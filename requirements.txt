@@ -9,3 +9,4 @@ torch==1.10.0
 torchmetrics==0.5.1
 tensorboard==2.8.0
 scikit_learn==1.1.1
+protobuf==3.20.1
