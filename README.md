@@ -1,9 +1,10 @@
 # Predict and Optimize: Through the Lens of Learning to Rank
-This repository contains the official PyTorch implementation of [Predict and Optimize: Through the Lens of Learning to Rank](https://arxiv.org/abs/2112.03609) (accepted for publication in ICML,2022).
+This repository contains the official PyTorch implementation of [Decision-Focused Learning: Through the Lens of Learning to Rank](https://proceedings.mlr.press/v162/mandi22a.html) (accepted for publication in ICML,2022).
 
 
 ## Overview
-This paper generalizes the work of [Contrastive Losses and Solution Caching for Predict-and-Optimize](https://doi.org/10.24963/ijcai.2021/390). This paper starts with the idea of caching solutions and frames the predict-and-optimze as a learning to rank problem, where models are trained to learn the partial ordering of the pool of feasible solutions. The proposed loss functions are motivated from the learning to rank literature and these loss functions, do not include the optimization problem menaing they are end-to-end differentiable. 
+![Alt text](AbstractFig.png?raw=true "Optional Title")
+This paper generalizes our previous work- [Contrastive Losses and Solution Caching for Predict-and-Optimize](https://doi.org/10.24963/ijcai.2021/390). Here we start with the idea of caching solutions explored in our previous work. Here we frame the predict-and-optimze as a learning to rank problem, where models are trained to learn the partial ordering of the pool of feasible solutions. The proposed loss functions are motivated from the learning to rank literature and these loss functions, do not include the optimization problem menaing they are end-to-end differentiable. 
 This repository contains pointwise, pairwise and listwise ranking loss functions for 3 predict-and-optimze problems.
 
 ### Requirements 
@@ -25,3 +26,4 @@ Contents of requirements.txt
   scikit_learn==1.1.1
   protobuf==3.20.1
  ```
+To run the codes and reproduce the results, go inside the folder and run the python scipts whose name starts with *test*.
