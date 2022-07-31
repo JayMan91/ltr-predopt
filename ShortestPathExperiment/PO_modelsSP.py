@@ -343,6 +343,8 @@ def Listnet_KLloss(y_hat,y_true,sol_true,cache,tau=1,minimize=True,*wd,**kwd):
                 dim=0)*F.softmax((-mm*y_true[ii]*cache/tau).sum(dim=1),dim=0)).mean()
     return loss
 
+############### MAP  from Contrastive Losses and Solution Caching for Predict-and-Optimize  #################
+
 def MAP(y_tilde,sol_true, cache,minimize=True):
     '''
     sol, and y are torch array [batch_size,48]
@@ -355,11 +357,13 @@ def MAP(y_tilde,sol_true, cache,minimize=True):
         loss += torch.max(((sol_true[ii] - cache )*(mm*y_tilde[ii]  )).sum(dim=1))
     return loss
 def MAP_c(y_hat,y_true,sol_true, cache,minimize=True,*wd,**kwd):
-    y = y_hat 
-    return MAP(sol_true,y,cache,minimize)
+    y_tilde = y_hat 
+    return MAP( y_tilde, sol_true, cache,minimize)
 def MAP_hatc_c(y_hat,y_true,sol_true, cache,minimize=True,*wd,**kwd):
-    y = y_hat - y_true
-    return MAP(sol_true,y,cache,minimize)
+    y_tilde= y_hat - y_true
+    return MAP(y_tilde, sol_true, cache,minimize)
+
+############### NCE from Contrastive Losses and Solution Caching for Predict-and-Optimize   #################
 
 def NCE(y_tilde,sol_true, cache,minimize=True):
     '''
@@ -373,11 +377,12 @@ def NCE(y_tilde,sol_true, cache,minimize=True):
         loss += torch.mean(((sol_true[ii] - cache )*(mm*y_tilde[ii]  )).sum(dim=1))
     return loss
 def NCE_c(y_hat,y_true,sol_true,cache,minimize=True,*wd,**kwd):
-    y = y_hat 
-    return NCE(sol_true,y,cache,minimize)
+    y_tilde = y_hat 
+    return NCE(y_tilde, sol_true, cache,minimize)
 def NCE_hatc_c(y_hat,y_true,sol_true,cache,minimize=True,*wd,**kwd):
-    y = y_hat - y_true
-    return NCE(sol_true,y,cache,minimize)
+    y_tilde = y_hat - y_true
+    return NCE(y_tilde, sol_true, cache,minimize)
+
 
 def growcache(solver, cache, y_hat):
     '''
