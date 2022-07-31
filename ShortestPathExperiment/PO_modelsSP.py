@@ -49,16 +49,21 @@ class shortestpath_solver:
 spsolver =  shortestpath_solver()
 ###################################### Wrapper #########################################
 class datawrapper():
-    def __init__(self, x,y):
+    def __init__(self, x,y, sol=None, solver= spsolver ):
         self.x = x
         self.y = y
+        if sol is None:
+            sol = []
+            for i in range(len(y)):
+                sol.append(   solver.shortest_pathsolution(y[i])   )            
+            sol = np.array(sol).astype(np.float32)
+        self.sol = sol
 
     def __len__(self):
         return len(self.y)
     
     def __getitem__(self, index):
-        return self.x[index], self.y[index]
-
+        return self.x[index], self.y[index],self.sol[index]
 
 
 def batch_solve(solver, y,relaxation =False):
@@ -109,7 +114,7 @@ class twostage_regression(pl.LightningModule):
     def forward(self,x):
         return self.net(x) 
     def training_step(self, batch, batch_idx):
-        x,y = batch
+        x,y, sol = batch
         y_hat =  self(x).squeeze()
         criterion = nn.MSELoss(reduction='mean')
         loss = criterion(y_hat,y)
@@ -121,7 +126,7 @@ class twostage_regression(pl.LightningModule):
         return training_loss 
     def validation_step(self, batch, batch_idx):
         criterion = nn.MSELoss(reduction='mean')
-        x,y = batch
+        x,y, sol = batch
         y_hat =  self(x).squeeze()
         mseloss = criterion(y_hat, y)
         regret_loss =  regret_fn(self.exact_solver, y_hat,y) 
@@ -159,35 +164,35 @@ def SPOLoss(solver, minimize=True):
     mm = 1 if minimize else -1
     class SPOLoss_cls(torch.autograd.Function):
         @staticmethod
-        def forward(ctx, y_pred, y_true):
+        def forward(ctx, y_pred, y_true, sol_true):
        
             sol_hat = solver.solution_fromtorch(y_pred)
             sol_spo = solver.solution_fromtorch(2* y_pred - y_true)
-            sol_true = solver.solution_fromtorch(y_true)
+            # sol_true = solver.solution_fromtorch(y_true)
             ctx.save_for_backward(sol_spo,  sol_true, sol_hat)
             return   mm*(  sol_hat - sol_true).dot(y_true)/( sol_true.dot(y_true) ) # changed to per cent rgeret
 
         @staticmethod
         def backward(ctx, grad_output):
             sol_spo,  sol_true, sol_hat = ctx.saved_tensors
-            return mm*(sol_true - sol_spo), None
+            return mm*(sol_true - sol_spo), None, None
             
     return SPOLoss_cls.apply
 def BlackboxLoss(solver,mu=0.1, minimize=True):
     mm = 1 if minimize else -1
     class BlackboxLoss_cls(torch.autograd.Function):
         @staticmethod
-        def forward(ctx, y_pred, y_true):
+        def forward(ctx, y_pred, y_true, sol_true):
             sol_hat = solver.solution_fromtorch(y_pred)
             sol_perturbed = solver.solution_fromtorch(y_pred + mu* y_true)
-            sol_true = solver.solution_fromtorch(y_true)
+            # sol_true = solver.solution_fromtorch(y_true)
             ctx.save_for_backward(sol_perturbed,  sol_true, sol_hat)
             return   mm*(  sol_hat - sol_true).dot(y_true)/( sol_true.dot(y_true) ) # changed to per cent rgeret
 
         @staticmethod
         def backward(ctx, grad_output):
             sol_perturbed,  sol_true, sol_hat = ctx.saved_tensors
-            return -mm*(sol_hat - sol_perturbed)/mu, None
+            return -mm*(sol_hat - sol_perturbed)/mu, None, None
             
     return BlackboxLoss_cls.apply
 
@@ -201,12 +206,12 @@ class SPO(twostage_regression):
         """
         super().__init__(net,exact_solver, lr, l1_weight,max_epochs, seed)
     def training_step(self, batch, batch_idx):
-        x,y = batch
+        x,y, sol = batch
         y_hat =  self(x).squeeze()
         loss = 0
         l1penalty = sum([(param.abs()).sum() for param in self.net.parameters()])
         for ii in range(len(y)):
-            loss += SPOLoss(self.exact_solver)(y_hat[ii],y[ii])
+            loss += SPOLoss(self.exact_solver)(y_hat[ii],y[ii], sol[ii])
         training_loss=  loss/len(y)  + l1penalty * self.l1_weight
         self.log("train_totalloss",training_loss, prog_bar=True, on_step=True, on_epoch=True, )
         self.log("train_l1penalty",l1penalty * self.l1_weight,  on_step=True, on_epoch=True, )
@@ -222,13 +227,13 @@ class Blackbox(twostage_regression):
         self.mu = mu
         self.save_hyperparameters("lr","mu")
     def training_step(self, batch, batch_idx):
-        x,y = batch
+        x,y, sol = batch
         y_hat =  self(x).squeeze()
         loss = 0
         l1penalty = sum([(param.abs()).sum() for param in self.net.parameters()])
 
         for ii in range(len(y)):
-            loss += BlackboxLoss(self.exact_solver,self.mu)(y_hat[ii],y[ii])
+            loss += BlackboxLoss(self.exact_solver,self.mu)(y_hat[ii],y[ii], sol[ii])
         training_loss=  loss/len(y)  + l1penalty * self.l1_weight
         self.log("train_totalloss",training_loss, prog_bar=True, on_step=True, on_epoch=True, )
         self.log("train_l1penalty",l1penalty * self.l1_weight,  on_step=True, on_epoch=True, )
@@ -237,6 +242,7 @@ class Blackbox(twostage_regression):
 
 
 ###################################### Ranking Loss  #########################################
+###################################### Ranking Loss  Functions  #########################################
 
 def pointwise_mse_loss(y_hat,y_true):
     c_hat = y_hat.unsqueeze(-1)
@@ -258,8 +264,7 @@ def pointwise_custom_loss(y_hat,y_true, *wd,**kwd):
 
 
 
-
-def pointwise_loss(y_hat,y_true,cache,*wd,**kwd):
+def pointwise_loss(y_hat,y_true,sol_true, cache,*wd,**kwd):
     '''
     sol, y and y_hat are torch array [batch_size,48]
     cache is torch array [currentpoolsize,48]
@@ -271,7 +276,7 @@ def pointwise_loss(y_hat,y_true,cache,*wd,**kwd):
 
 
 
-def pairwise_loss(y_hat,y_true,cache,tau=0, minimize=True,mode= 'B'):
+def pairwise_loss(y_hat,y_true,sol_true, cache,tau=0, minimize=True,mode= 'B'):
     '''
     sol, y and y_hat are torch array [batch_size,48]
     cache is torch array [currentpoolsize,48]
@@ -297,7 +302,7 @@ def pairwise_loss(y_hat,y_true,cache,tau=0, minimize=True,mode= 'B'):
         
     return loss
 
-def pairwise_diffloss(y_hat,y_true,cache,tau=0, minimize=True,mode= 'B'):
+def pairwise_diffloss(y_hat,y_true,sol_true, cache,tau=0, minimize=True,mode= 'B'):
     '''
     sol, y and y_hat are torch array [batch_size,48]
     cache is torch array [currentpoolsize,48]
@@ -322,14 +327,14 @@ def pairwise_diffloss(y_hat,y_true,cache,tau=0, minimize=True,mode= 'B'):
         
     return loss
 
-def Listnet_loss(y_hat,y_true,cache,tau=1,minimize=True,*wd,**kwd):
+def Listnet_loss(y_hat,y_true,sol_true, cache,tau=1,minimize=True,*wd,**kwd):
     mm = 1 if minimize else -1 
     loss = 0
     for ii in range(len(y_true)):
          loss += -(F.log_softmax((-mm*y_hat[ii]*cache/tau).sum(dim=1),
                 dim=0)*F.softmax((-mm*y_true[ii]*cache/tau).sum(dim=1),dim=0)).mean()
     return loss
-def Listnet_KLloss(y_hat,y_true,cache,tau=1,minimize=True,*wd,**kwd):
+def Listnet_KLloss(y_hat,y_true,sol_true,cache,tau=1,minimize=True,*wd,**kwd):
     mm = 1 if minimize else -1 
     loss = 0
     for ii in range(len(y_true)):
@@ -338,47 +343,41 @@ def Listnet_KLloss(y_hat,y_true,cache,tau=1,minimize=True,*wd,**kwd):
                 dim=0)*F.softmax((-mm*y_true[ii]*cache/tau).sum(dim=1),dim=0)).mean()
     return loss
 
-def MAP(sol,y,cache,minimize=True):
+def MAP(y_tilde,sol_true, cache,minimize=True):
     '''
-    sol, y and y_hat are torch array [batch_size,48]
+    sol, and y are torch array [batch_size,48]
     cache is torch array [currentpoolsize,48]
     '''
     mm = 1 if minimize else -1 
     loss = 0
     # print("shape check", sol.shape, y.shape,y_hat.shape, cache.shape)
-    for ii in range(len(y)):
-        loss += torch.max(((sol[ii] - cache )*(mm*y[ii]  )).sum(dim=1))
+    for ii in range(len(y_tilde)):
+        loss += torch.max(((sol_true[ii] - cache )*(mm*y_tilde[ii]  )).sum(dim=1))
     return loss
-def MAP_c(y_hat,y_true,cache,minimize=True,*wd,**kwd):
-    sol = batch_solve(spsolver, y_hat,relaxation =False)
+def MAP_c(y_hat,y_true,sol_true, cache,minimize=True,*wd,**kwd):
     y = y_hat 
-    return MAP(sol,y,cache,minimize)
-def MAP_hatc_c(y_hat,y_true,cache,minimize=True,*wd,**kwd):
-    sol = batch_solve(spsolver, y_hat,relaxation =False)
+    return MAP(sol_true,y,cache,minimize)
+def MAP_hatc_c(y_hat,y_true,sol_true, cache,minimize=True,*wd,**kwd):
     y = y_hat - y_true
-    return MAP(sol,y,cache,minimize)
+    return MAP(sol_true,y,cache,minimize)
 
-def NCE(sol,y,cache,minimize=True):
+def NCE(y_tilde,sol_true, cache,minimize=True):
     '''
-    sol, y and y_hat are torch array [batch_size,48]
+    sol, and y are torch array [batch_size,48]
     cache is torch array [currentpoolsize,48]
     '''
     mm = 1 if minimize else -1 
     loss = 0
     # print("shape check", sol.shape, y.shape,y_hat.shape, cache.shape)
-    for ii in range(len(y)):
-        loss += torch.mean(((sol[ii] - cache )*(mm*y[ii]  )).sum(dim=1))
+    for ii in range(len(y_tilde)):
+        loss += torch.mean(((sol_true[ii] - cache )*(mm*y_tilde[ii]  )).sum(dim=1))
     return loss
-def NCE_c(y_hat,y_true,cache,minimize=True,*wd,**kwd):
-    sol = batch_solve( spsolver, y_hat,relaxation =False)
+def NCE_c(y_hat,y_true,sol_true,cache,minimize=True,*wd,**kwd):
     y = y_hat 
-    return NCE(sol,y,cache,minimize)
-def NCE_hatc_c(y_hat,y_true,cache,minimize=True,*wd,**kwd):
-    sol = batch_solve(spsolver, y_hat,relaxation =False)
+    return NCE(sol_true,y,cache,minimize)
+def NCE_hatc_c(y_hat,y_true,sol_true,cache,minimize=True,*wd,**kwd):
     y = y_hat - y_true
-    return NCE(sol,y,cache,minimize)
-
-
+    return NCE(sol_true,y,cache,minimize)
 
 def growcache(solver, cache, y_hat):
     '''
@@ -424,13 +423,12 @@ class CachingPO(twostage_regression):
     
  
     def training_step(self, batch, batch_idx):
-        x,y = batch
+        x,y, sol = batch
         y_hat =  self(x).squeeze()
         if (np.random.random(1)[0]<= self.growth) or len(self.cache)==0:
             self.cache = growcache(self.exact_solver, self.cache, y_hat)
 
-  
-        loss = self.loss_fn(y_hat,y,self.cache, self.tau)
+        loss = self.loss_fn(y_hat,y,sol, self.cache, self.tau)
         l1penalty = sum([(param.abs()).sum() for param in self.net.parameters()])
         training_loss=  loss/len(y)  + l1penalty * self.l1_weight
         self.log("train_totalloss",training_loss, prog_bar=True, on_step=True, on_epoch=True, )
